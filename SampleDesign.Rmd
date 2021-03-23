@@ -1,0 +1,236 @@
+---
+title: "GOASamplingDesign"
+author: "Chris Rooper"
+date: "3/22/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+
+library(raster)
+library(rgdal)
+library(maptools)
+library(maps)
+library(gstat)
+library(rgeos)
+library(proj4)
+library(sp)
+library(mgcv)
+library(tidyr)
+library(arm)
+library(PresenceAbsence)
+library(ggplot2)
+library(viridis)
+library(dismo)
+source("C:/Users/rooperc/Documents/Chris Work Stuff/R Software Help and Functions/Miscellaneous Functions/MappingExtras.R")
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r hideme}
+
+bathy<-raster("D:/GOA Coral and Sponge Model/Variables/RasterGrids/bathy_all")
+bathy<-raster::aggregate(bathy,fact=100,fun=mean,filename="C:/Users/rooperc/Desktop/Deep Sea Coral Research/GOA Model Validation - Sigler/SampleDesign/RasterLayers/bathy",overwrite=TRUE)
+
+coral<-raster("D:/GOA Coral and Sponge Model - Revisions/PredictionRasters/coralsENScpue")
+coral<-raster::aggregate(coral,fact=100,fun=mean,filename="C:/Users/rooperc/Desktop/Deep Sea Coral Research/GOA Model Validation - Sigler/SampleDesign/RasterLayers/coral")
+coralCV<-raster("D:/GOA Coral and Sponge Model - Revisions/PredictionRasters/coralsCVcpue")
+coralCV<-raster::aggregate(coralCV,fact=100,fun=mean,filename="C:/Users/rooperc/Desktop/Deep Sea Coral Research/GOA Model Validation - Sigler/SampleDesign/RasterLayers/coralcv")
+
+sponge<-raster("D:/GOA Coral and Sponge Model - Revisions/PredictionRasters/SpongeENScpue")
+sponge<-raster::aggregate(sponge,fact=100,fun=mean,filename="C:/Users/rooperc/Desktop/Deep Sea Coral Research/GOA Model Validation - Sigler/SampleDesign/RasterLayers/sponge")
+spongeCV<-raster("D:/GOA Coral and Sponge Model - Revisions/PredictionRasters/SpongeCVcpue")
+spongeCV<-raster::aggregate(spongeCV,fact=100,fun=mean,filename="C:/Users/rooperc/Desktop/Deep Sea Coral Research/GOA Model Validation - Sigler/SampleDesign/RasterLayers/spongecv")
+
+```
+
+
+
+
+
+## Sample design
+
+The goal of this code is to set up a few sample designs for validating a deep-sea coral model for the Gulf of Alaska.
+
+```{r bring the pieces}
+
+bathy<-raster("./RasterLayers/bathy")
+coral<-raster("./RasterLayers/coral")
+sponge<-raster("./RasterLayers/sponge")
+coralCV<-raster("./RasterLayers/coralcv")
+spongeCV<-raster("./RasterLayers/spongeCV")
+
+plot(stack(bathy,coral,coralCV,sponge,spongeCV))
+
+akland<-readOGR("./RasterLayers","AKland")
+akland
+plot(akland)
+
+```
+
+## Simple Random Sampling
+
+
+```{r pressure, echo=FALSE}
+
+srs_sites<-sampleRandom(bathy,size=300,xy=TRUE,sp=TRUE)
+head(srs_sites)
+dim(srs_sites)
+hist(srs_sites$layer,breaks=10)
+
+plot(bathy)
+plot(akland,col="black",add=TRUE)
+points(srs_sites,col="purple",pch=20)
+
+srs_sites_ll<-coordinates(spTransform(srs_sites,crs("+proj=longlat +datum=WGS84")))
+
+
+cpue<-raster::extract(coral,srs_sites)
+hist(cpue,breaks=100)
+
+
+```
+
+## Stratified random sampling 
+
+```{r stratified random sampling}
+
+strata<-c(0,100,200,300,500,1000)
+strata_raster<-cut(bathy,breaks=strata)
+plot(strata_raster)
+
+strata_sites<-raster::sampleStratified(strata_raster,size=300/5,xy=TRUE,sp=TRUE)
+head(strata_sites)
+dim(strata_sites)
+hist(strata_sites$layer,breaks=10)
+
+plot(bathy)
+plot(akland,col="black",add=TRUE)
+points(strata_sites,col="purple",pch=20)
+
+strata_sites_ll<-coordinates(spTransform(sites,crs("+proj=longlat +datum=WGS84")))
+
+
+cpue<-raster::extract(coral,strata_sites)
+hist(cpue,breaks=100)
+
+
+```
+## Stratified random sampling with proportional allocation
+
+nh=n*(Nh/N)
+
+```{r stratified random proportional sampling}
+
+strata<-c(0,100,200,300,500,1000)
+strata_raster<-cut(bathy,breaks=strata)
+strata_Nh<-data.frame(zonal(bathy,strata_raster,fun="count"))
+strata_Nh
+
+nh<-round(300*(strata_Nh$count)/(sum(strata_Nh$count)),0)
+
+nh
+
+pstrata_sites<-NULL
+
+for(i in 1:length(nh)){
+tmp<-strata_raster
+  tmp[tmp!=i]<-NA
+tmp1<-sampleRandom(tmp,size=nh[i],xy=TRUE)[,1:2]
+pstrata_sites<-rbind(pstrata_sites,tmp1)}
+pstrata_sites<-SpatialPoints(coords=pstrata_sites,proj4string=CRS(proj4string(bathy)))
+
+head(pstrata_sites)
+dim(pstrata_sites)
+depth<-raster::extract(bathy,pstrata_sites)
+hist(depth,breaks=10)
+
+plot(bathy)
+plot(akland,col="black",add=TRUE)
+points(pstrata_sites,col="purple",pch=20)
+
+pstrata_sites_ll<-spTransform(pstrata_sites,crs("+proj=longlat +datum=WGS84"))
+
+
+cpue<-raster::extract(coral,pstrata_sites)
+hist(cpue,breaks=100)
+
+```
+
+
+## Stratified random sampling with Neyman allocation 
+
+Nh=n*Sh*Nh/(sum(Sh*Nh)
+Nh = numberof samples in stratum h
+Sh = standard deviation of stratum h
+
+```{r stratified random neyman sampling}
+
+strata<-c(0,100,200,300,500,1000)
+strata_raster<-cut(bathy,breaks=strata)
+strata_Sh<-data.frame(zonal(coral,strata_raster,fun="sd"))
+strata_Sh
+strata_Nh<-data.frame(zonal(coral,strata_raster,fun="count"))
+strata_Nh
+
+nh<-round(300*(strata_Sh$sd*strata_Nh$count)/(sum(strata_Sh$sd*strata_Nh$count)),0)
+nh
+
+
+nstrata_sites<-NULL
+
+for(i in 1:length(nh)){
+tmp<-strata_raster
+  tmp[tmp!=i]<-NA
+tmp1<-sampleRandom(tmp,size=nh[i],xy=TRUE)[,1:2]
+nstrata_sites<-rbind(nstrata_sites,tmp1)}
+nstrata_sites<-SpatialPoints(coords=nstrata_sites,proj4string=CRS(proj4string(bathy)))
+
+head(nstrata_sites)
+dim(nstrata_sites)
+depth<-raster::extract(bathy,nstrata_sites)
+hist(depth,breaks=10)
+
+plot(bathy)
+plot(akland,col="black",add=TRUE)
+points(nstrata_sites,col="purple",pch=20)
+
+nstrata_sites_ll<-spTransform(nstrata_sites,crs("+proj=longlat +datum=WGS84"))
+
+
+cpue<-raster::extract(coral,nstrata_sites)
+hist(cpue,breaks=100)
+
+```
+
+## Weighted sampling
+
+Probability of a station being sampled is determined by its relative weight. In this case we can weight by CV of the model prediction or the model predicted CPUE itself.
+
+```{r weighted random sampling}
+
+wsites<-randomPoints(coral, n=300, prob=TRUE)
+
+head(wsites)
+dim(wsites)
+depth<-raster::extract(bathy,wsites)
+hist(depth,breaks=10)
+
+plot(bathy)
+plot(akland,col="black",add=TRUE)
+points(wsites,col="purple",pch=20)
+
+wsites<-SpatialPoints(coords=wsites,proj4string=CRS(proj4string(bathy)))
+wsites_ll<-spTransform(wsites,crs("+proj=longlat +datum=WGS84"))
+
+
+wcpue<-raster::extract(coral,wsites)
+hist(wcpue,breaks=100)
+
+
+
+```
+
+
+
+
