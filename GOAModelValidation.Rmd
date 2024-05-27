@@ -1,0 +1,328 @@
+---
+title: "Gulf of Alaska Benthic Invertebrate Model Validation"
+author: "Chris Rooper, Pam Goddard, Pat Malecha, Christina Conrath"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+library(terra)
+library(raster)
+ library(rgdal)
+library(dplyr)
+library(tidyr)
+library(rnaturalearth)
+library(sf)
+ library(maptools)
+ library(maps)
+# library(gstat)
+# library(rgeos)
+# library(proj4)
+# library(sp)
+# library(mgcv)
+# library(tidyr)
+# library(arm)
+ library(PresenceAbsence)
+ library(ggplot2)
+ library(viridis)
+library(ggrepel)
+# library(dismo)
+ source("C:/Users/rooperc/Documents/Chris Work Stuff/R Software Help and Functions/Miscellaneous Functions/MappingExtras.R")
+
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+Goal of this analysis is to test the GOA models against newly collected coral and sponge survey data.
+
+
+```{r DataWrangle, echo=FALSE}
+
+#HAPC 2010 data
+HAPC_2010<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/Density_data HAPC 2010.csv")
+HAPC_2010$Survey<-"HAPC 2010"
+
+#MACE 2013 data
+MACE_2013<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/Density_data MACE 2013.csv")
+MACE_2013$Survey<-"MACE 2013"
+
+#MACE 2015 data
+MACE_2015<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/Density_data MACE 2015.csv")
+MACE_2015$Survey<-"MACE 2015"
+
+#MACE 2017 data
+MACE_2017<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/Density_data MACE 2017.csv")
+MACE_2017$Survey<-"MACE 2017"
+
+#MACE 2019 data
+MACE_2019<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/Density_data MACE 2019.csv")
+MACE_2019$Survey<-"MACE 2019"
+
+#Kodiak 2012-2014 data
+Kodiak_2012_2014<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/Density_data KodiakCobb 2012-2014.csv")
+Kodiak_2012_2014$Survey<-"Kodiak 2012-2014"
+
+#Coral survey 2022
+GOA_2022<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/Density_data GOA Survey 2022.csv")
+GOA_2022$Survey<-"GOA 2022"
+
+GOA_data<-rbind(GOA_2022,MACE_2019,MACE_2017,MACE_2015,MACE_2013,HAPC_2010,Kodiak_2012_2014)
+
+SpeciesList<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/SpeciesListFinal.csv",header=TRUE)
+SpeciesList<-SpeciesList[,-1]
+SpeciesList<-unique(SpeciesList)
+
+GOA_data<-merge(GOA_data,SpeciesList,by=c("TaxaGroup","SpeciesName"),all.x=TRUE)
+GOA_data$Density<-GOA_data$Count/(GOA_data$swath*GOA_data$distance_fished*GOA_data$Prop_on)
+GOA_data$Density[is.na(GOA_data$Density)]<-0
+
+Deployments<-unique(GOA_data[,c(3:14,16)])
+
+```
+
+
+```{r bring the pieces}
+
+bg = ne_countries(scale = "medium",  returnclass = "sf")
+bg1<-st_transform(bg,3832)
+
+#TRANSFORM THE TRAJECTORIES TO THE SAME PROJECTION AND ADD THEM TO THE DATA SET
+data2<-project(cbind(Deployments$Start_long,Deployments$Start_lat),"+proj=merc +lon_0=150 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
+Deployments$LonP<-data2[,1]
+Deployments$LatP<-data2[,2]
+
+
+
+#MAKE A SET OF BOUNDARIES TO USE AS THE PLOTTING RANGE (LIMITS ON LONGITUDE AND LATITUDE)
+data3<-data.frame(cbind(c(-130,-170),c(48,62)))
+data3<-proj4::project(data3,"+proj=merc +lon_0=150 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
+
+ 
+
+#PLOT THE ENTIRE TRAJECTORY WITH THE MAP AS THE BACKGROUND
+p<-ggplot()+
+  #basemap
+  geom_sf(data = bg1)+
+  coord_sf(xlim = range(data3$x, na.rm = TRUE), 
+           ylim = range(data3$y, na.rm = TRUE), 
+           expand = TRUE)+
+
+
+  geom_point(data = Deployments, 
+             aes(x=LonP,y=LatP,group=Survey,color=Survey),
+             alpha = 0.7, shape=21, size = 2)+
+  geom_text_repel(data=Deployments,aes(x=LonP,y=LatP,label=Survey,color=Survey),size=3)+
+  
+  # formatting
+  scale_fill_viridis_d(option = "inferno")+
+  scale_color_viridis_d(option = "inferno")+
+  scale_size_continuous(range = c(0.1,14))+
+  labs(x=NULL, y=NULL, 
+       fill = 'Survey', 
+       color = 'Survey')+
+  theme_dark()+
+  theme(panel.grid = element_blank(),legend.position="none")
+
+
+png("Figure1.png",height=6,width=6,unit="in",res=300)
+print(p)
+dev.off()
+
+
+```
+
+
+
+
+```{r make the raster stacks}
+
+bathy<-raster("D:/GOA Coral and Sponge Model/Variables/RasterGrids/bathy_all")
+
+prediction.dir<-"D:/GOA Coral and Sponge Model - Revisions/PredictionRasters/"
+models<-c("ENS","BRT","RF","GAM","GLM")
+taxagroups<-c("corals","demosponge","hexact","primnoidae","seawhips","sponge")
+
+coral.stack<-bathy
+names(coral.stack)<-"bathy"
+for(k in 1:length(taxagroups)){
+for(i in 1:length(models)){
+  r1<-raster(paste0(prediction.dir,taxagroups[k],models[i],"pa"))
+  names(r1)<-paste0(taxagroups[k],models[i],"pa")
+  coral.stack<-stack(coral.stack,r1)
+  r1<-raster(paste0(prediction.dir,taxagroups[k],models[i],"cpue"))
+  names(r1)<-paste0(taxagroups[k],models[i],"cpue")
+  coral.stack<-stack(coral.stack,r1)
+}}
+
+
+newproj<-"+proj=aea +lat_0=50 +lon_0=-154 +lat_1=55 +lat_2=65 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs"
+
+
+
+line.x<-c(Deployments[1,4],Deployments[1,5])
+line.y<-c(Deployments[1,6],Deployments[1,7])
+line1<-Line(cbind(line.x,line.y))
+line1<-Lines(list(line1),Deployments[1,1])
+Drops<-SpatialLines(list(line1),proj4string=CRS("+proj=longlat +datum=WGS84"))
+
+for(i in 2:length(Deployments$Deployment_ID)){
+line.x<-c(Deployments[i,4],Deployments[i,5])
+line.y<-c(Deployments[i,6],Deployments[i,7])
+line1<-Line(cbind(line.x,line.y))
+line1<-Lines(list(line1),Deployments[i,1])
+Hauls1<-SpatialLines(list(line1),proj4string=CRS("+proj=longlat +datum=WGS84"))
+Drops<-rbind(Drops,Hauls1)}
+
+Drops.project<-spTransform(Drops,CRS(newproj))
+
+
+predictions<-(raster::extract(coral.stack,Drops.project,fun="mean",na.rm=TRUE))
+predictions[is.nan(predictions)]<-0
+predictions<-data.frame(predictions)
+predictions$Deployment_ID<-Deployments$Deployment_ID
+
+```
+
+```{r combine the observations into taxa groups}
+
+taxagroup_data<-aggregate(Density~Deployment_ID+TaxaGroup,data=GOA_data,FUN="sum",na.rm=TRUE)
+coral_data<-subset(taxagroup_data,taxagroup_data$TaxaGroup=="Coral")
+coral_data<-merge(Deployments,coral_data,by="Deployment_ID",all.x=TRUE)
+coral_data<-coral_data[,-16]
+coral_data$Density[is.na(coral_data$Density)]<-0
+colnames(coral_data)[colnames(coral_data)=="Density"]<-"coralsdensity"
+val_data<-coral_data
+
+#whip_data<-subset(taxagroup_data,taxagroup_data$TaxaGroup=="Pennatulacean")
+#whip_data<-data.frame(Deployment_ID=whip_data$Deployment_ID,seawhipsdensity=whip_data$Density)
+#val_data<-merge(val_data,whip_data,by="Deployment_ID",all.x=TRUE)
+#val_data$seawhipsdensity[is.na(val_data$seawhipsdensity)]<-0
+
+sponge_data<-subset(taxagroup_data,taxagroup_data$TaxaGroup=="Sponge")
+sponge_data<-data.frame(Deployment_ID=sponge_data$Deployment_ID,spongedensity=sponge_data$Density)
+val_data<-merge(val_data,sponge_data,by="Deployment_ID",all.x=TRUE)
+val_data$spongedensity[is.na(val_data$spongedensity)]<-0
+
+
+family_data<-aggregate(Density~Deployment_ID+Family,data=GOA_data,FUN="sum",na.rm=TRUE)
+primnoidae_data<-subset(family_data,family_data$Family=="Primnoidae")
+primnoidae_data<-data.frame(Deployment_ID=primnoidae_data$Deployment_ID,primnoidaedensity=primnoidae_data$Density)
+val_data<-merge(val_data,primnoidae_data,by="Deployment_ID",all.x=TRUE)
+val_data$primnoidaedensity[is.na(val_data$primnoidaedensity)]<-0
+
+balticinidae_data<-subset(family_data,family_data$Family=="Balticinidae")
+balticinidae_data<-data.frame(Deployment_ID=balticinidae_data$Deployment_ID,seawhipsdensity=balticinidae_data$Density)
+val_data<-merge(val_data,balticinidae_data,by="Deployment_ID",all.x=TRUE)
+val_data$seawhipsdensity[is.na(val_data$seawhipsdensity)]<-0
+
+class_data<-aggregate(Density~Deployment_ID+Class,data=GOA_data,FUN="sum",na.rm=TRUE)
+demo_data<-subset(class_data,class_data$Class=="Demospongiae")
+demo_data<-data.frame(Deployment_ID=demo_data$Deployment_ID,demospongedensity=demo_data$Density)
+val_data<-merge(val_data,demo_data,by="Deployment_ID",all.x=TRUE)
+val_data$demospongedensity[is.na(val_data$demospongedensity)]<-0
+
+hex_data<-subset(class_data,class_data$Class=="Hexactinellida")
+hex_data<-data.frame(Deployment_ID=hex_data$Deployment_ID,hexactdensity=hex_data$Density)
+val_data<-merge(val_data,hex_data,by="Deployment_ID",all.x=TRUE)
+val_data$hexactdensity[is.na(val_data$hexactdensity)]<-0
+
+head(val_data)
+
+```
+RISK = PROBABILITY * SEVERITY
+
+```{r evaluation of pa models}
+
+threshold_table<-read.csv("thresholds.csv",header=TRUE)
+
+predictions<-predictions[order(predictions$Deployment_ID),]
+val_data<-val_data[order(val_data$Deployment_ID),]
+
+pa_function<-function(ob_density,pred_pa,threshold){
+  #ob_density<-val_data[paste0(taxagroups[k],"density")]
+  #pred_pa<-predictions[paste0(taxagroups[k],models[i],"pa")]
+  #threshold<-threshold_table$threshold[threshold_table$model==models[i]&threshold_table$taxagroups==taxagroups[k]]
+obs<-ifelse(ob_density>0,1,0)  
+auc_df<-data.frame(X1=seq(1,length(obs),1),X2=obs,X3=pred_pa)  
+colnames(auc_df)<-c("X1","X2","X3")
+auc_df<-subset(auc_df,is.na(auc_df$X3)==FALSE)
+AUC<-round(auc(auc_df,na.rm=TRUE)[1],3)
+RMSE<-round(sqrt(mean((auc_df$X2-auc_df$X3)^2)),3)
+opt_thresh<-optimal.thresholds(auc_df,opt.methods=3)[1,2]
+TSS<-round(sensitivity(cmx(auc_df,threshold))+specificity(cmx(auc_df,threshold))-1,3)[1]
+spear_corr<-round(cor.test(auc_df[,2],auc_df[,3],method="spearman")$estimate,3)
+print(cmx(auc_df,threshold))
+return(data.frame(AUC=AUC,RMSE=RMSE,threshold=opt_thresh,TSS=TSS,correlation=spear_corr))
+}
+
+table1<-NULL
+for(k in 1:length(taxagroups)){
+for(i in 1:length(models)){
+t1<-pa_function(val_data[paste0(taxagroups[k],"density")],predictions[paste0(taxagroups[k],models[i],"pa")],threshold=threshold_table$threshold[threshold_table$model==models[i]&threshold_table$taxagroups==taxagroups[k]])
+t1$Taxa<-taxagroups[k]
+t1$Model<-models[i]
+table1<-rbind(table1,t1)}}
+
+table1$Model<-factor(table1$Model,levels=c("GLM","GAM","BRT","RF","ENS"))
+table1$Taxa<-factor(table1$Taxa,levels=c("primnoidae","corals","hexact","demosponge","sponge","seawhips"),labels=c("Primnoidae","Coral","Hexactinellida","Demospongiae","Porifera","Balticina"))
+
+table1
+
+p1<-ggplot(table1)+geom_bar(aes(x=Model,y=AUC,fill=Taxa),stat="identity")+geom_hline(aes(yintercept=0.5))+
+  geom_hline(aes(yintercept=0.7),linetype="dashed")+geom_hline(aes(yintercept=0.60),linetype="dotdash")+scale_fill_viridis_d()+
+  ylim(c(0,1))
+p1<-p1+facet_wrap(~Taxa)
+
+png("Figure2.png",height=6,width=6,unit="in",res=300)
+print(p1)
+dev.off()
+
+
+```
+
+```{r test density predictions}
+
+predictions<-predictions[order(predictions$Deployment_ID),]
+val_data<-val_data[order(val_data$Deployment_ID),]
+
+density_function<-function(obs_density,pred_cpue){
+auc_df<-data.frame(X1=obs_density,X2=pred_cpue)  
+colnames(auc_df)<-c("X1","X2")
+auc_df<-subset(auc_df,auc_df$X2>=0)
+c1<-round(cor(auc_df$X1,auc_df$X2,use="complete.obs"),3)
+c2<-round(cor(auc_df$X1,auc_df$X2,method="spearman",use="complete.obs"),3)
+c3<-round(cor.test(auc_df$X1,auc_df$X2)$p.value,3)
+RMSE<-round(sqrt(mean((auc_df$X2-auc_df$X1)^2)),3)
+#plot(auc_df$X2~auc_df$X1)
+return(data.frame(pearson=c1,spearman=c2,p.value=c3,RMSE=RMSE))
+}
+
+table2<-NULL
+for(k in 1:length(taxagroups)){
+for(i in 1:length(models)){
+t1<-density_function(log(val_data[paste0(taxagroups[k],"density")]+1),predictions[paste0(taxagroups[k],models[i],"cpue")])
+t1$Taxa<-taxagroups[k]
+t1$Model<-models[i]
+table2<-rbind(table2,t1)}}
+
+table2$Model<-factor(table2$Model,levels=c("GLM","GAM","BRT","RF","ENS"))
+table2$Taxa<-factor(table2$Taxa,levels=c("primnoidae","corals","hexact","demosponge","sponge","seawhips"),labels=c("Primnoidae","Coral","Hexactinellida","Demospongiae","Porifera","Balticina"))
+
+table2
+
+p1<-ggplot(table2)+geom_bar(aes(x=Model,y=pearson,fill=Taxa),stat="identity")+geom_hline(aes(yintercept=0.05))+
+  geom_hline(aes(yintercept=0.25),linetype="dashed")+scale_fill_viridis_d()+
+  ylim(c(0,.5))
+p1<-p1+facet_wrap(~Taxa)
+
+subset(table2,table2$p.value<0.05)
+
+png("Figure3.png",height=6,width=6,unit="in",res=300)
+print(p1)
+dev.off()
+
+
+```
+
+
