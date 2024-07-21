@@ -22,12 +22,17 @@ library(sf)
 # library(mgcv)
 # library(tidyr)
 # library(arm)
+#library(sp)
+#library(rgeos)
+
  library(PresenceAbsence)
  library(ggplot2)
  library(viridis)
 library(ggrepel)
+library(ggspatial)
 # library(dismo)
  source("C:/Users/rooperc/Documents/Chris Work Stuff/R Software Help and Functions/Miscellaneous Functions/MappingExtras.R")
+source("C:/Users/rooperc/Documents/Chris Work Stuff/R Software Help and Functions/Miscellaneous Functions/TjursR2.R")
 
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -82,55 +87,131 @@ Deployments<-unique(GOA_data[,c(3:14,16)])
 ```
 
 
-```{r bring the pieces}
+```{r stats for methods}
 
-bg = ne_countries(scale = "medium",  returnclass = "sf")
-bg1<-st_transform(bg,3832)
+hist(Deployments$distance_fished)
+hist(Deployments$swath)
 
-#TRANSFORM THE TRAJECTORIES TO THE SAME PROJECTION AND ADD THEM TO THE DATA SET
-data2<-project(cbind(Deployments$Start_long,Deployments$Start_lat),"+proj=merc +lon_0=150 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
-Deployments$LonP<-data2[,1]
-Deployments$LatP<-data2[,2]
+min(Deployments$distance_fished)
+max(Deployments$distance_fished)
 
+mean(Deployments$distance_fished)
+sd(Deployments$distance_fished)/sqrt(length(Deployments$distance_fished))
 
+aggregate(distance_fished~Survey,data=Deployments,FUN=c("mean"))
+aggregate(distance_fished~Survey,data=Deployments,FUN=c("min"))
+aggregate(distance_fished~Survey,data=Deployments,FUN=c("max"))
 
-#MAKE A SET OF BOUNDARIES TO USE AS THE PLOTTING RANGE (LIMITS ON LONGITUDE AND LATITUDE)
-data3<-data.frame(cbind(c(-130,-170),c(48,62)))
-data3<-proj4::project(data3,"+proj=merc +lon_0=150 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
+quantile(Deployments$distance_fished,probs=seq(0,1,.1))
 
- 
+subset(Deployments,Deployments$distance_fished<30)
+subset(Deployments,Deployments$distance_fished>1000)
 
-#PLOT THE ENTIRE TRAJECTORY WITH THE MAP AS THE BACKGROUND
-p<-ggplot()+
-  #basemap
-  geom_sf(data = bg1)+
-  coord_sf(xlim = range(data3$x, na.rm = TRUE), 
-           ylim = range(data3$y, na.rm = TRUE), 
-           expand = TRUE)+
+min(Deployments$distance_fished*Deployments$Prop_on*Deployments$swath)
+max(Deployments$distance_fished*Deployments$Prop_on*Deployments$swath)
 
-
-  geom_point(data = Deployments, 
-             aes(x=LonP,y=LatP,group=Survey,color=Survey),
-             alpha = 0.7, shape=21, size = 2)+
-  geom_text_repel(data=Deployments,aes(x=LonP,y=LatP,label=Survey,color=Survey),size=3)+
-  
-  # formatting
-  scale_fill_viridis_d(option = "inferno")+
-  scale_color_viridis_d(option = "inferno")+
-  scale_size_continuous(range = c(0.1,14))+
-  labs(x=NULL, y=NULL, 
-       fill = 'Survey', 
-       color = 'Survey')+
-  theme_dark()+
-  theme(panel.grid = element_blank(),legend.position="none")
-
-
-png("Figure1.png",height=6,width=6,unit="in",res=300)
-print(p)
-dev.off()
+mean(Deployments$distance_fished*Deployments$Prop_on*Deployments$swath)
+sd(Deployments$distance_fished*Deployments$Prop_on*Deployments$swath)/sqrt(length(Deployments$distance_fished))
 
 
 ```
+
+
+```{r Figure1}
+
+#Figure 1 - Area
+GOA.xaxis<-c(-162,-158,-154,-150,-146,-142,-138,-134)
+GOA.yaxis<-c(53,55,57,59,61)
+GOA.yaxis.ticks<-cbind(c(-165,-165,-165.75,-166.5,-167.75),GOA.yaxis)
+GOA.xaxis.ticks<-cbind(GOA.xaxis,c(53,53.5,53.75,53,53.15,52.5,52,51.55))
+GOA.yaxis.ticks<-project(GOA.yaxis.ticks,"+proj=aea +lat_1=55 +lat_2=65 +lat_0=50 +lon_0=-154 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
+GOA.xaxis.ticks<-project(GOA.xaxis.ticks,"+proj=aea +lat_1=55 +lat_2=65 +lat_0=50 +lon_0=-154 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
+GOA.yaxis.ticks<-GOA.yaxis.ticks[,2]
+GOA.xaxis.ticks<-GOA.xaxis.ticks[,1]
+GOA.ext.x<-c(-720000,1380000,1380000,-720000,-720000)
+GOA.ext.y<-c(450000,450000,1330000,1330000,450000)
+GOA.ext.pol<-Polygon(cbind(GOA.ext.x,GOA.ext.y))
+GOA.ext.pol<-Polygons(list(GOA.ext.pol),"GOA")
+GOA.ext.pol<-SpatialPolygons(list(GOA.ext.pol), proj4string=CRS("+proj=aea +lat_1=55 +lat_2=65 +lat_0=50 +lon_0=-154 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"))
+wrld_p <- map("world", interior = FALSE,plot = FALSE)
+llCRS <- CRS("+proj=longlat +ellps=WGS84")
+wrld_sp <- map2SpatialLines(wrld_p, proj4string = llCRS)
+prj_new <- CRS("+proj=moll")
+wrld_proj <- spTransform(wrld_sp, prj_new)
+wrld_grd <- gridlines(wrld_sp, easts = c(-130, seq(-166,-134, 2), -170), norths = seq(-75, 75, 2), ndiscr = 100)
+wrld_grd_proj <- spTransform(wrld_grd, prj_new)
+wrld_grd_proj2<-spTransform(wrld_grd,CRS("+proj=aea +lat_1=55 +lat_2=65 +lat_0=50 +lon_0=-154 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs"))
+ak.coast<-readShapeSpatial("C:/Users/rooperc/Documents/Chris Work Stuff/R Software Help and Functions/RSpatialWorkshop - Seamount SDM/NorthAmerica Shapefile/namerica_dcw")
+
+
+#TRANSFORM THE TRAJECTORIES TO THE SAME PROJECTION AND ADD THEM TO THE DATA SET
+data2<-project(cbind(Deployments$Start_long,Deployments$Start_lat),"+proj=aea +lat_1=55 +lat_2=65 +lat_0=50 +lon_0=-154 +x_0=0 +y_0=0 +ellps=GRS80 +datum=NAD83 +units=m +no_defs")
+Deployments$LonP<-data2[,1]
+Deployments$LatP<-data2[,2]
+ptcols<-data.frame(Survey=factor(Deployments$Survey,levels=c("HAPC 2010","Kodiak 2012-2014","MACE 2013","MACE 2015","MACE 2017","MACE 2019","GOA 2022")))
+ptcols$cols<-as.numeric(ptcols$Survey)
+ptcols$cols[ptcols$cols==1]<-"#FDE725FF"
+ptcols$cols[ptcols$cols==2]<-"#8FD744FF" 
+ptcols$cols[ptcols$cols==3]<-"#35B779FF" 
+ptcols$cols[ptcols$cols==4]<-"#21908CFF" 
+ptcols$cols[ptcols$cols==5]<-"#31688EFF" 
+ptcols$cols[ptcols$cols==6]<-"#443A83FF" 
+ptcols$cols[ptcols$cols==7]<-"#440154FF" 
+
+png(filename="Figure1.png",width=7.1, height=5,res=300,units="in")
+#dev.new(width=7.1,height=5,units="in")
+par(mfrow=c(1,1),mar=c(5,4,1,1),family="sans")
+plot(bathy, main = "",xaxt="n",yaxt="n",col="transparent", box=F,ext=GOA.ext.pol,zlim=c(0,1000),legend=FALSE,legend.shrink=0.5,axis.args=list(cex.axis=0.65),legend.args=list(text="Depth",cex=0.65,cex.lab=0.65,side=1,line=2),horiz=TRUE,ylab="Latitude",xlab="Longitude")
+#depth.contour<-contour(bathy,levels=c(100,200,500,850),col=colorRampPalette(c("grey30","grey70"))(4),drawlabels=TRUE,labels=c(100,200,500,1000),method="edge",add=TRUE)
+depth.contour<-contour(bathy,levels=c(100,200,500,998),col=colorRampPalette(c("grey30","grey70"))(4),drawlabels=FALSE,add=TRUE)
+plot(ak.coast, col = "grey80", add = TRUE)
+#train<-cbind(training.data$lon,training.data$lat)
+#test<-cbind(test.data$lon,test.data$lat)
+#points(train,col="blue",pch=20,cex=.35)
+#points(test,col="purple",pch=20,cex=.35)
+plot(wrld_grd_proj2,lty=3,col="lightgrey",add=T)
+axis(1, at=GOA.xaxis.ticks,labels=GOA.xaxis)
+axis(2,at=GOA.yaxis.ticks,labels=GOA.yaxis)
+#legVals <- c("Training","Test")
+#legend(650000,650000, legend = legVals, pch = c(20,20),col=c("blue","purple"),bty="n", pt.cex = c(1,1) , title = paste("n = ",(length(train[,1])+length(test[,1])),sep=""),cex=1)
+text(700000,750000,"Gulf of Alaska",font=4)
+text(-550000,900000,"Bering Sea",cex=1,font=4)
+text(-600000,690000,"Unimak Pass",cex=.65,font=1)
+arrows(-600000,670000,-710000,575000,length=0,col="black")
+text(-100000,1250000,"Alaska",cex=1.5,font=2)
+text(1200000,1230000,"Canada",srt=-45,cex=1.5,font=2)
+
+text(-80000,550000,"Kodiak Island",srt=25,cex=.65,font=1)
+arrows(-70000,565000,-15000,780000,length=0,lwd=2,col="black")
+
+#text(200000,650000,"Albatross Bank",cex=.65,font=1)
+#arrows(200000,660000,130000,800000,length=0,col="black",lwd=2)
+#arrows(200000,660000,180000,840000,length=0,col="black",lwd=2)
+
+text(-100000,1050000,"Cook Inlet",cex=.65,font=1)
+arrows(-10000,1050000,80000,1060000,length=0,col="black")
+
+text(1200000,600000,"Dixon Entrance",cex=.65,font=1)
+arrows(1300000,620000,1350000,700000,length=0,lwd=2,col="black")
+
+points(cbind(Deployments$LonP,Deployments$LatP),col=ptcols$cols,pch=20,cex=1)
+
+
+scalebar(200000,xy=c(1100000,450000),type="bar",divs=4,below="km",label=c(0,100,200),cex=0.65)
+legVals <- c("100 m","200 m","500 m","1000 m")
+legend("bottom", legend = legVals, lty=c(1,1,1,1),col=colorRampPalette(c("grey30","grey70"))(4),bty="n", pt.cex = 2 , title ="",cex=.65)
+
+legVals <- levels(ptcols$Survey)
+legend("topleft", legend = legVals,col=viridis_pal(direction=-1)(7),bty="o", bg="grey90",pt.cex = 1 ,pch=20, title ="",cex=.65)
+dev.off()
+
+
+
+
+
+
+```
+
 
 
 
@@ -182,7 +263,85 @@ predictions[is.nan(predictions)]<-0
 predictions<-data.frame(predictions)
 predictions$Deployment_ID<-Deployments$Deployment_ID
 
+write.csv(predictions,"predictions.csv",row.names=FALSE)
+
 ```
+
+
+```{r densityinkg}
+
+#MACE 2013 data
+MACE_2013_size<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/targetout_data MACE 2013.csv")
+MACE_2013_size$Survey<-"MACE 2013"
+MACE_2013_size$PROJECT<-"MACE2013_GOA"
+colnames(MACE_2013_size)[colnames(MACE_2013_size)=="class"]<-"species_group"
+colnames(MACE_2013_size)<-tolower(colnames(MACE_2013_size))
+
+#MACE 2015 data
+MACE_2015_size<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/targetout_data MACE 2015.csv")
+MACE_2015_size$Survey<-"MACE 2015"
+MACE_2015_size$PROJECT<-"MACE2015_GOA"
+colnames(MACE_2015_size)[colnames(MACE_2015_size)=="class"]<-"species_group"
+colnames(MACE_2015_size)<-tolower(colnames(MACE_2015_size))
+
+#MACE 2017 data
+MACE_2017_size<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/targetout_data MACE 2017.csv")
+MACE_2017_size$Survey<-"MACE 2017"
+MACE_2017_size$PROJECT<-"MACE2017_GOA"
+colnames(MACE_2017_size)[colnames(MACE_2017_size)=="class"]<-"species_group"
+colnames(MACE_2017_size)<-tolower(colnames(MACE_2017_size))
+
+
+#MACE 2019 data
+MACE_2019_size<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/targetout_data MACE 2019.csv")
+MACE_2019_size$Survey<-"MACE 2019"
+colnames(MACE_2019_size)<-tolower(colnames(MACE_2019_size))
+
+#Kodiak 2012-2014 data
+Kodiak_2012_2014_size<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/targetout_data Kodiak 2012-2014.csv")
+Kodiak_2012_2014_size$Survey<-"Kodiak 2012-2014"
+Kodiak_2012_2014_size$PROJECT<-"Kodiak20122014_GOA"
+colnames(Kodiak_2012_2014_size)[colnames(Kodiak_2012_2014_size)=="class"]<-"species_group"
+colnames(Kodiak_2012_2014_size)<-tolower(colnames(Kodiak_2012_2014_size))
+
+#Coral survey 2022
+GOA_2022_size<-read.csv("C:/Users/rooperc/Desktop/Deep Sea Coral Research/DeepSeaCoralSurveyDataBase/targetout_data GOA Survey 2022.csv")
+GOA_2022_size$Survey<-"GOA 2022"
+colnames(GOA_2022_size)<-tolower(colnames(GOA_2022_size))
+
+GOA_size<-rbind(GOA_2022_size,MACE_2019_size,MACE_2017_size,MACE_2015_size,MACE_2013_size,Kodiak_2012_2014_size)
+GOA_size<-subset(GOA_size,GOA_size$length>0&(GOA_size$taxagroup=="Coral"|GOA_size$taxagroup=="Pennatulacean"|GOA_size$taxagroup=="Sponge")&GOA_size$error<50)
+hist(GOA_size$length)
+subset(GOA_size,GOA_size$length>200)
+subset(GOA_size,GOA_size$error>25)
+
+unique(GOA_size[,29:35])
+
+weight_convert<-read.csv("weight_convert.csv",header=TRUE)
+GOA_size<-merge(GOA_size,weight_convert,by="aphiaid",all.x=TRUE)
+GOA_size$weight<-GOA_size$a*10*GOA_size$length^GOA_size$b
+GOA_size$weight[is.na(GOA_size$weight)]<-1000*GOA_size$mean_wt[is.na(GOA_size$weight)]
+
+subset(GOA_size,is.na(GOA_size$weight))
+
+mean_wt_transect<-aggregate(weight~aphiaid+deployment_id,data=GOA_size,FUN="mean")
+mean_wt_taxa<-aggregate(weight~aphiaid,data=GOA_size,FUN="mean")
+mean_wt_taxagroup<-aggregate(weight~taxagroup,data=GOA_size,FUN="mean")
+
+GOA_datawt<-merge(GOA_data,mean_wt_transect,by.x=c("AphiaID","Deployment_ID"),by.y=c("aphiaid","deployment_id"),all.x=TRUE)
+GOA_datawt<-merge(GOA_datawt,mean_wt_taxa,by.x=c("AphiaID"),by.y=c("aphiaid"),all.x=TRUE)
+GOA_datawt<-merge(GOA_datawt,mean_wt_taxagroup,by.x=c("TaxaGroup"),by.y=c("taxagroup"),all.x=TRUE)
+
+GOA_datawt$Wt_density<-GOA_datawt$Density*GOA_datawt$weight.x
+GOA_datawt$Wt_density[is.na(GOA_datawt$Wt_density)]<-GOA_datawt$Density[is.na(GOA_datawt$Wt_density)]*GOA_datawt$weight.y[is.na(GOA_datawt$Wt_density)]
+GOA_datawt$Wt_density[is.na(GOA_datawt$Wt_density)]<-GOA_datawt$Density[is.na(GOA_datawt$Wt_density)]*GOA_datawt$weight[is.na(GOA_datawt$Wt_density)]
+
+GOA_datawt<-data.frame(AphiaID=GOA_datawt$AphiaID,Deployment_ID=GOA_datawt$Deployment_ID,Wt_density=GOA_datawt$Wt_density)
+GOA_data<-merge(GOA_data,GOA_datawt,by=c("AphiaID","Deployment_ID"),all.x=TRUE)
+
+```
+
+
 
 ```{r combine the observations into taxa groups}
 
@@ -232,14 +391,49 @@ head(val_data)
 ```
 RISK = PROBABILITY * SEVERITY
 
+```{r results summary}
+dsct<-c("Coral","Pennatulacean","Sponge")
+
+dscs_data<-subset(GOA_data,GOA_data$TaxaGroup%in%dsct)
+
+t1<-aggregate(Count~ScientificName+TaxaGroup,data=dscs_data,FUN="sum")
+
+t1$Present<-aggregate(Count~ScientificName+TaxaGroup,data=dscs_data,FUN="length")[,3]/712
+
+
+
+densdata<-pivot_wider(dscs_data,names_from=c(ScientificName,TaxaGroup),values_from=Density,values_fill=0)
+densdata<-pivot_longer(densdata,cols=Parantipathes_Coral:'Isidella tentaculum_Coral',names_to=c("ScientificName","TaxaGroup"),names_sep="_",values_to="Density")
+densdata$Density<-densdata$Density/.0001
+t2<-aggregate(Density~ScientificName+TaxaGroup,data=densdata,FUN="mean")
+t2$SE<-aggregate(Density~ScientificName+TaxaGroup,data=densdata,FUN="sd")[,3]/sqrt(aggregate(Density~ScientificName+TaxaGroup,data=densdata,FUN="length")[,3])
+t1<-merge(t1,t2,by=c("ScientificName","TaxaGroup"),all.x=TRUE)
+t1<-arrange(t1,t1$TaxaGroup,-t1$Count)
+
+table(dscs_data$TaxaGroup)/712
+
+
+
+
+
+
+```
+
+
+
 ```{r evaluation of pa models}
 
 threshold_table<-read.csv("thresholds.csv",header=TRUE)
 
 predictions<-predictions[order(predictions$Deployment_ID),]
 val_data<-val_data[order(val_data$Deployment_ID),]
+#val_data<-subset(val_data,val_data$Survey!="HAPC 2010"&val_data$Survey!="Kodiak 2012-2014")
+#predictions<-subset(predictions,predictions$Deployment_ID%in%val_data$Deployment_ID)
 
-pa_function<-function(ob_density,pred_pa,threshold){
+#predictions<-subset(predictions,val_data$Survey!="Kodiak 2012-2014"&val_data$Survey!="HAPC 2010")
+#val_data<-subset(val_data,val_data$Survey!="Kodiak 2012-2014"&val_data$Survey!="HAPC 2010")
+
+pa_function<-function(ob_density,pred_pa,threshold,use_opt_thresh=FALSE){
   #ob_density<-val_data[paste0(taxagroups[k],"density")]
   #pred_pa<-predictions[paste0(taxagroups[k],models[i],"pa")]
   #threshold<-threshold_table$threshold[threshold_table$model==models[i]&threshold_table$taxagroups==taxagroups[k]]
@@ -249,11 +443,16 @@ colnames(auc_df)<-c("X1","X2","X3")
 auc_df<-subset(auc_df,is.na(auc_df$X3)==FALSE)
 AUC<-round(auc(auc_df,na.rm=TRUE)[1],3)
 RMSE<-round(sqrt(mean((auc_df$X2-auc_df$X3)^2)),3)
-opt_thresh<-optimal.thresholds(auc_df,opt.methods=3)[1,2]
+if(use_opt_thresh==TRUE){
+threshold<-optimal.thresholds(auc_df,opt.methods=2)[1,2]}
+#opt_thresh<-optimal.thresholds(auc_df,opt.methods=2)[1,2]
+tjurs<-TjursR2(auc_df$X2,auc_df$X3)
 TSS<-round(sensitivity(cmx(auc_df,threshold))+specificity(cmx(auc_df,threshold))-1,3)[1]
+sens<-round(sensitivity(cmx(auc_df,threshold)),3)[1]
+spec<-round(specificity(cmx(auc_df,threshold)),3)[1]
 spear_corr<-round(cor.test(auc_df[,2],auc_df[,3],method="spearman")$estimate,3)
 print(cmx(auc_df,threshold))
-return(data.frame(AUC=AUC,RMSE=RMSE,threshold=opt_thresh,TSS=TSS,correlation=spear_corr))
+return(data.frame(AUC=AUC,RMSE=RMSE,tjur=tjurs,threshold=threshold,sensitivity=sens,specificity=spec,TSS=TSS,correlation=spear_corr))
 }
 
 table1<-NULL
@@ -269,10 +468,27 @@ table1$Taxa<-factor(table1$Taxa,levels=c("primnoidae","corals","hexact","demospo
 
 table1
 
-p1<-ggplot(table1)+geom_bar(aes(x=Model,y=AUC,fill=Taxa),stat="identity")+geom_hline(aes(yintercept=0.5))+
-  geom_hline(aes(yintercept=0.7),linetype="dashed")+geom_hline(aes(yintercept=0.60),linetype="dotdash")+scale_fill_viridis_d()+
-  ylim(c(0,1))
+aggregate(AUC~Taxa,table1,FUN="mean")
+aggregate(sensitivity~Taxa,table1,FUN="mean")
+aggregate(sensitivity~Taxa,table1,FUN="min")
+aggregate(specificity~Taxa,table1,FUN="min")
+summary(table1)
+
+rooper2017pa<-read.csv("Rooper2017paGOF.csv",header=TRUE)
+rooper2017pa$Taxa<-factor(rooper2017pa$Taxa,levels=c("Primnoidae","Coral","Hexactinellida","Demospongiae","Porifera","Balticina"),labels=c("Primnoidae","Coral","Hexactinellida","Demospongiae","Porifera","Balticina"))
+rooper2017pa<-rooper2017pa[rooper2017pa$Parameter=="AUC"&rooper2017pa$Data.set=="Testing",]
+
+
+p1<-ggplot(table1)+geom_bar(aes(x=Model,y=AUC,fill=Taxa),stat="identity")+geom_hline(aes(yintercept=0.5))+geom_hline(aes(yintercept=0.6),linetype="dotdash")+
+  geom_hline(aes(yintercept=0.7),linetype="dashed")+scale_fill_viridis_d()+
+  scale_y_continuous(limits=c(0,1),breaks = seq(0,1,.2))+
+  geom_errorbar(data=rooper2017pa,aes(x=Model,ymin=Value,ymax=Value,color="Rooper et al. (2017)"))+
+ylab("Area under the receiver-operator curve (AUC)") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+xlab("Model type")+
+   scale_colour_manual(name='', values=c("Rooper et al. (2017)" = "darkred"), guide ="legend") +
+  guides(col = guide_legend(override.aes = list(linetype=1), title = "Reference")) 
+
 p1<-p1+facet_wrap(~Taxa)
+
 
 png("Figure2.png",height=6,width=6,unit="in",res=300)
 print(p1)
@@ -281,10 +497,64 @@ dev.off()
 
 ```
 
-```{r test density predictions}
 
+
+
+
+
+```{r combine the observations into taxa groups-density}
+
+
+taxagroup_data<-aggregate(Wt_density~Deployment_ID+TaxaGroup,data=GOA_data,FUN="sum",na.rm=TRUE)
+coral_data<-subset(taxagroup_data,taxagroup_data$TaxaGroup=="Coral")
+coral_data<-merge(Deployments,coral_data,by="Deployment_ID",all.x=TRUE)
+coral_data<-coral_data[,-16]
+coral_data$Wt_density[is.na(coral_data$Wt_density)]<-0
+colnames(coral_data)[colnames(coral_data)=="Wt_density"]<-"coralswtdensity"
+val_datawt<-coral_data
+
+sponge_data<-subset(taxagroup_data,taxagroup_data$TaxaGroup=="Sponge")
+sponge_data<-data.frame(Deployment_ID=sponge_data$Deployment_ID,spongewtdensity=sponge_data$Wt_density)
+val_datawt<-merge(val_datawt,sponge_data,by="Deployment_ID",all.x=TRUE)
+val_datawt$spongewtdensity[is.na(val_datawt$spongewtdensity)]<-0
+
+
+family_data<-aggregate(Wt_density~Deployment_ID+Family,data=GOA_data,FUN="sum",na.rm=TRUE)
+primnoidae_data<-subset(family_data,family_data$Family=="Primnoidae")
+primnoidae_data<-data.frame(Deployment_ID=primnoidae_data$Deployment_ID,primnoidaewtdensity=primnoidae_data$Wt_density)
+val_datawt<-merge(val_datawt,primnoidae_data,by="Deployment_ID",all.x=TRUE)
+val_datawt$primnoidaewtdensity[is.na(val_datawt$primnoidaewtdensity)]<-0
+
+penfams<-c("Virgulariidae","Umbellulidae","Halipteridae","Balticinidae","Anthoptilidae")
+balticinidae_data<-subset(family_data,family_data$Family%in%penfams)
+balticinidae_data<-aggregate(Wt_density~Deployment_ID,data=balticinidae_data,FUN="sum",na.rm=TRUE)
+balticinidae_data<-data.frame(Deployment_ID=balticinidae_data$Deployment_ID,seawhipswtdensity=balticinidae_data$Wt_density)
+val_datawt<-merge(val_datawt,balticinidae_data,by="Deployment_ID",all.x=TRUE)
+val_datawt$seawhipswtdensity[is.na(val_datawt$seawhipswtdensity)]<-0
+
+class_data<-aggregate(Wt_density~Deployment_ID+Class,data=GOA_data,FUN="sum",na.rm=TRUE)
+demo_data<-subset(class_data,class_data$Class=="Demospongiae")
+demo_data<-data.frame(Deployment_ID=demo_data$Deployment_ID,demospongewtdensity=demo_data$Wt_density)
+val_datawt<-merge(val_datawt,demo_data,by="Deployment_ID",all.x=TRUE)
+val_datawt$demospongewtdensity[is.na(val_datawt$demospongewtdensity)]<-0
+
+hex_data<-subset(class_data,class_data$Class=="Hexactinellida")
+hex_data<-data.frame(Deployment_ID=hex_data$Deployment_ID,hexactwtdensity=hex_data$Wt_density)
+val_datawt<-merge(val_datawt,hex_data,by="Deployment_ID",all.x=TRUE)
+val_datawt$hexactwtdensity[is.na(val_datawt$hexactwtdensity)]<-0
+
+head(val_datawt)
+
+```
+
+
+
+
+```{r testdens}
 predictions<-predictions[order(predictions$Deployment_ID),]
-val_data<-val_data[order(val_data$Deployment_ID),]
+val_datawt<-val_datawt[order(val_datawt$Deployment_ID),]
+
+
 
 density_function<-function(obs_density,pred_cpue){
 auc_df<-data.frame(X1=obs_density,X2=pred_cpue)  
@@ -301,7 +571,7 @@ return(data.frame(pearson=c1,spearman=c2,p.value=c3,RMSE=RMSE))
 table2<-NULL
 for(k in 1:length(taxagroups)){
 for(i in 1:length(models)){
-t1<-density_function(log(val_data[paste0(taxagroups[k],"density")]+1),predictions[paste0(taxagroups[k],models[i],"cpue")])
+t1<-density_function((val_datawt[paste0(taxagroups[k],"wtdensity")]*10)^.25,predictions[paste0(taxagroups[k],models[i],"cpue")])
 t1$Taxa<-taxagroups[k]
 t1$Model<-models[i]
 table2<-rbind(table2,t1)}}
@@ -311,9 +581,27 @@ table2$Taxa<-factor(table2$Taxa,levels=c("primnoidae","corals","hexact","demospo
 
 table2
 
+aggregate(pearson~Taxa,table2,FUN="mean")
+aggregate(sensitivity~Taxa,table1,FUN="mean")
+aggregate(sensitivity~Taxa,table1,FUN="min")
+aggregate(specificity~Taxa,table1,FUN="min")
+summary(table2)
+
+rooper2018cpue<-read.csv("Rooper2017cpueGOF.csv",header=TRUE)
+rooper2018cpue$Taxa<-factor(rooper2018cpue$Taxa,levels=c("Primnoidae","Coral","Hexactinellida","Demospongiae","Porifera","Balticina"),labels=c("Primnoidae","Coral","Hexactinellida","Demospongiae","Porifera","Balticina"))
+rooper2018cpue<-rooper2018cpue[rooper2018cpue$Parameter=="R2"&rooper2018cpue$Data.set=="Testing",]
+rooper2018cpue$Value<-sqrt(rooper2018cpue$Value)
+
 p1<-ggplot(table2)+geom_bar(aes(x=Model,y=pearson,fill=Taxa),stat="identity")+geom_hline(aes(yintercept=0.05))+
   geom_hline(aes(yintercept=0.25),linetype="dashed")+scale_fill_viridis_d()+
-  ylim(c(0,.5))
+  ylim(c(0,.8))+
+  geom_errorbar(data=rooper2018cpue,aes(x=Model,ymin=Value,ymax=Value,color="Rooper et al. (2017)"))+
+ylab("Pearson correlation coefficient") + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+xlab("Model type")+
+   scale_colour_manual(name='', values=c("Rooper et al. (2017)" = "darkred"), guide ="legend") +
+  guides(col = guide_legend(override.aes = list(linetype=1), title = "Reference")) 
+  
+  
+  
 p1<-p1+facet_wrap(~Taxa)
 
 subset(table2,table2$p.value<0.05)
@@ -325,4 +613,374 @@ dev.off()
 
 ```
 
+
+
+
+
+```{r maps of residuals}
+predictions<-predictions[order(predictions$Deployment_ID),]
+val_datawt<-val_datawt[order(val_datawt$Deployment_ID),]
+
+
+
+residual_map<-function(deployment_id,obs,pred_pa,pred_cpue,lon,lat,taxagroup,model){
+  #deployment_id<-val_datawt$Deployment_ID
+  #obs<-log(val_datawt[paste0(taxagroups[k],"wtdensity")]*10+minval)
+  #pred<-predictions[paste0(taxagroups[k],models[i],"cpue")]
+  #lon<-val_datawt$LonP
+  #lat<-val_datawt$LatP
+  #taxagroup<-taxagroups[k]
+  
+res_df<-data.frame(Deployment_ID=deployment_id,lon=lon,lat=lat,obs=obs,pred_pa=pred_pa,pred_cpue=pred_cpue,residual_cpue=obs-pred_cpue,residual_pa=ifelse(obs>0,1,0)-pred_pa)
+colnames(res_df)<-c("Deployment_ID","lon","lat","obs","pred_pa","pred_cpue","residual_cpue","residual_pa")
+res_df<-subset(res_df,res_df$pred_pa>=0)
+
+###CPUE PLot
+ptcols<-cut(res_df$residual_cpue,breaks=c(-Inf,-2,-1,-.5,.5,1,2,Inf),labels=c("< -2","-2 to -1","-1 to -0.5","-0.5 to 0.5","0.5 to 1","1 to 2","> 2"))
+ptcols<-as.numeric(ptcols)
+ptcols[ptcols==1]<-"#FDE725FF"
+ptcols[ptcols==2]<-"#8FD744FF" 
+ptcols[ptcols==3]<-"#35B779FF" 
+ptcols[ptcols==4]<-"#21908CFF" 
+ptcols[ptcols==5]<-"#31688EFF" 
+ptcols[ptcols==6]<-"#443A83FF" 
+ptcols[ptcols==7]<-"#440154FF" 
+
+png(filename=paste0("./Figures/",taxagroup,model,"_cpue.png"),width=7.1, height=5,res=300,units="in")
+#dev.new(width=7.1,height=5,units="in")
+par(mfrow=c(1,1),mar=c(5,4,1,1),family="sans")
+plot(bathy, main = "",xaxt="n",yaxt="n",col="transparent", box=F,ext=GOA.ext.pol,zlim=c(0,1000),legend=FALSE,legend.shrink=0.5,axis.args=list(cex.axis=0.65),legend.args=list(text="Depth",cex=0.65,cex.lab=0.65,side=1,line=2),horiz=TRUE,ylab="Latitude",xlab="Longitude")
+depth.contour<-contour(bathy,levels=c(100,200,500,998),col=colorRampPalette(c("grey30","grey70"))(4),drawlabels=FALSE,add=TRUE)
+plot(ak.coast, col = "grey80", add = TRUE)
+plot(wrld_grd_proj2,lty=3,col="lightgrey",add=T)
+axis(1, at=GOA.xaxis.ticks,labels=GOA.xaxis)
+axis(2,at=GOA.yaxis.ticks,labels=GOA.yaxis)
+text(700000,750000,"Gulf of Alaska",font=4)
+text(-550000,900000,"Bering Sea",cex=1,font=4)
+# text(-600000,690000,"Unimak Pass",cex=.65,font=1)
+# arrows(-600000,670000,-710000,575000,length=0,col="black")
+text(-100000,1250000,"Alaska",cex=1.5,font=2)
+text(1200000,1230000,"Canada",srt=-45,cex=1.5,font=2)
+
+# text(-80000,550000,"Kodiak Island",srt=25,cex=.65,font=1)
+# arrows(-70000,565000,-15000,780000,length=0,lwd=2,col="black")
+
+# text(-100000,1050000,"Cook Inlet",cex=.65,font=1)
+# arrows(-10000,1050000,80000,1060000,length=0,col="black")
+# 
+# text(1200000,600000,"Dixon Entrance",cex=.65,font=1)
+# arrows(1300000,620000,1350000,700000,length=0,lwd=2,col="black")
+
+points(cbind(lon,lat),col=ptcols,pch=20,cex=1)
+
+scalebar(200000,xy=c(1100000,450000),type="bar",divs=4,below="km",label=c(0,100,200),cex=0.65)
+legVals <- c("100 m","200 m","500 m","1000 m")
+legend("bottom", legend = legVals, lty=c(1,1,1,1),col=colorRampPalette(c("grey30","grey70"))(4),bty="n", pt.cex = 2 , title ="",cex=.65)
+
+legVals <- c("< -2","-2 to -1","-1 to -0.5","-0.5 to 0.5","0.5 to 1","1 to 2","> 2")
+legend("topleft", legend = legVals,col=viridis_pal(direction=-1)(7),bty="o", bg="grey90",pt.cex = 1 ,pch=20, title ="",cex=.65)
+dev.off()
+
+###PAplot
+ptcols<-cut(res_df$residual_pa,breaks=c(-1,-.75,-.5,-.25,.25,.5,.75,1),labels=c("< -0.75","-0.75 to -0.50","-0.50 to -0.25","-0.25 to 0.25","0.25 to 0.50","0.50 to 0.75","> 0.75"))
+ptcols<-as.numeric(ptcols)
+ptcols[ptcols==1]<-"#FDE725FF"
+ptcols[ptcols==2]<-"#8FD744FF" 
+ptcols[ptcols==3]<-"#35B779FF" 
+ptcols[ptcols==4]<-"#21908CFF" 
+ptcols[ptcols==5]<-"#31688EFF" 
+ptcols[ptcols==6]<-"#443A83FF" 
+ptcols[ptcols==7]<-"#440154FF" 
+
+png(filename=paste0("./Figures/",taxagroup,model,"_pa.png"),width=7.1, height=5,res=300,units="in")
+#dev.new(width=7.1,height=5,units="in")
+par(mfrow=c(1,1),mar=c(5,4,1,1),family="sans")
+plot(bathy, main = "",xaxt="n",yaxt="n",col="transparent", box=F,ext=GOA.ext.pol,zlim=c(0,1000),legend=FALSE,legend.shrink=0.5,axis.args=list(cex.axis=0.65),legend.args=list(text="Depth",cex=0.65,cex.lab=0.65,side=1,line=2),horiz=TRUE,ylab="Latitude",xlab="Longitude")
+depth.contour<-contour(bathy,levels=c(100,200,500,998),col=colorRampPalette(c("grey30","grey70"))(4),drawlabels=FALSE,add=TRUE)
+plot(ak.coast, col = "grey80", add = TRUE)
+plot(wrld_grd_proj2,lty=3,col="lightgrey",add=T)
+axis(1, at=GOA.xaxis.ticks,labels=GOA.xaxis)
+axis(2,at=GOA.yaxis.ticks,labels=GOA.yaxis)
+text(700000,750000,"Gulf of Alaska",font=4)
+text(-550000,900000,"Bering Sea",cex=1,font=4)
+# text(-600000,690000,"Unimak Pass",cex=.65,font=1)
+# arrows(-600000,670000,-710000,575000,length=0,col="black")
+text(-100000,1250000,"Alaska",cex=1.5,font=2)
+text(1200000,1230000,"Canada",srt=-45,cex=1.5,font=2)
+
+# text(-80000,550000,"Kodiak Island",srt=25,cex=.65,font=1)
+# arrows(-70000,565000,-15000,780000,length=0,lwd=2,col="black")
+
+# text(-100000,1050000,"Cook Inlet",cex=.65,font=1)
+# arrows(-10000,1050000,80000,1060000,length=0,col="black")
+# 
+# text(1200000,600000,"Dixon Entrance",cex=.65,font=1)
+# arrows(1300000,620000,1350000,700000,length=0,lwd=2,col="black")
+
+points(cbind(lon,lat),col=ptcols,pch=20,cex=1)
+
+scalebar(200000,xy=c(1100000,450000),type="bar",divs=4,below="km",label=c(0,100,200),cex=0.65)
+legVals <- c("100 m","200 m","500 m","1000 m")
+legend("bottom", legend = legVals, lty=c(1,1,1,1),col=colorRampPalette(c("grey30","grey70"))(4),bty="n", pt.cex = 2 , title ="",cex=.65)
+
+legVals <- c("< -0.75","-0.75 to -0.50","-0.50 to -0.25","-0.25 to 0.25","0.25 to 0.50","0.50 to 0.75","> 0.75")
+legend("topleft", legend = legVals,col=viridis_pal(direction=-1)(7),bty="o", bg="grey90",pt.cex = 1 ,pch=20, title ="",cex=.65)
+dev.off()
+
+
+
+
+
+
+return(res_df)
+}
+
+
+residual_df<-NULL
+for(i in 1:length(models)){
+for(k in 1:length(taxagroups)){
+t1<-residual_map(val_datawt$Deployment_ID,(val_datawt[paste0(taxagroups[k],"wtdensity")]*10)^.25,predictions[paste0(taxagroups[k],models[i],"pa")],predictions[paste0(taxagroups[k],models[i],"cpue")],val_datawt$LonP,val_datawt$LatP,taxagroups[k],models[i])
+t1$TaxaGroup<-taxagroups[k]
+t1$Model<-models[i]
+residual_df<-rbind(residual_df,t1)
+
+}}
+
+ggplot(residual_df)+geom_violin(aes(x=TaxaGroup,y=residual_cpue,fill=TaxaGroup))+
+  scale_fill_viridis_d(option="magma")
+
+ggplot(residual_df)+geom_violin(aes(x=TaxaGroup,y=residual_pa,fill=TaxaGroup))+
+  scale_fill_viridis_d(option="magma")
+
+
+ggplot(residual_df)+geom_histogram(aes(x=residual_cpue,fill=TaxaGroup),bins=15)+
+  facet_wrap(~TaxaGroup,scales="free_y")
+
+ggplot(residual_df)+geom_histogram(aes(x=residual_pa,fill=TaxaGroup),bins=15)+
+  facet_wrap(~TaxaGroup,scales="free_y")
+
+```
+
+
+```{r figure5}
+alldat<-merge(residual_df,val_data[,1:13],by="Deployment_ID",all.x=TRUE)
+alldat$Longitude<-factor(ceiling(alldat$Start_long/10)*10, levels=c(-160,-150,-140,-130))
+
+ggplot(alldat[alldat$Model=="ENS",])+geom_boxplot(aes(x=Longitude,y=residual_pa,fill=TaxaGroup))+
+  facet_wrap(~TaxaGroup,scales="free_y")
+
+
+alldat1<-aggregate(residual_pa~Survey+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="mean")
+alldat1$SE<-aggregate(residual_pa~Survey+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="sd")[,3]/sqrt(aggregate(residual_pa~Survey+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="length")[,3])
+alldat1$Taxa<-factor(alldat1$TaxaGroup,levels=c("corals","primnoidae","seawhips","sponge","demosponge","hexact"),labels=c("Coral","Primnoidae","Pennatulacean","Porifera","Demospongiae","Hexactinellida"))
+alldat1$Survey<-factor(alldat1$Survey,levels=c("HAPC 2010","Kodiak 2012-2014","MACE 2013","MACE 2015","MACE 2017","MACE 2019","GOA 2022"))#,labels=c("Coral","Primnoidae","Pennatulacean","Porifera","Demospongiae","Hexactinellida"))
+
+p1<-ggplot(alldat1)+
+  geom_errorbar(aes(x=Survey,ymin=residual_pa-SE,ymax=residual_pa+SE),width=0.15)+
+  geom_point(aes(x=Survey,y=residual_pa,color=Survey,fill=Survey),stat="identity",size=2.5)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+xlab("")+ylab("Residual (observed camera survey - predicted bottom trawl model")+
+  scale_color_manual("Survey",values=c("#FDE725FF","#8FD744FF","#35B779FF","#21908CFF","#31688EFF","#443A83FF","#440154FF"))+ 
+  facet_wrap(~Taxa)#,scales="free_y")
+
+png("Figure5.png")
+print(p1)
+dev.off()
+
+aov1<-aov(residual_pa~Survey+TaxaGroup+Survey*TaxaGroup,data=alldat[alldat$Model=="ENS",])
+summary(aov1)
+TukeyHSD(aov1)
+
+
+
+alldat1<-aggregate(residual_pa~Longitude+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="mean")
+alldat1$SE<-aggregate(residual_pa~Longitude+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="sd")[,3]/sqrt(aggregate(residual_pa~Longitude+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="length")[,3])
+alldat1$Taxa<-factor(alldat1$TaxaGroup,levels=c("corals","primnoidae","seawhips","sponge","demosponge","hexact"),labels=c("Coral","Primnoidae","Pennatulacean","Porifera","Demospongiae","Hexactinellida"))
+#alldat1$Longitude<-factor(alldat1$Survey,levels=c("HAPC 2010","Kodiak 2012-2014","MACE 2013","MACE 2015","MACE 2017","MACE 2019","GOA 2022"))#,labels=c("Coral","Primnoidae","Pennatulacean","Porifera","Demospongiae","Hexactinellida"))
+
+p1<-ggplot(alldat1)+geom_point(aes(x=Longitude,y=residual_pa,color=Longitude,fill=Longitude),stat="identity")+
+  geom_errorbar(aes(x=Longitude,ymin=residual_pa-SE,ymax=residual_pa+SE),width=0.25)+
+ # theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+xlab("")+
+ # scale_color_manual("Survey",values=c("#FDE725FF","#8FD744FF","#35B779FF","#21908CFF","#31688EFF","#443A83FF","#440154FF"))+ 
+  facet_wrap(~Taxa)#,scales="free_y")
+
+png("Figure5a.png")
+print(p1)
+dev.off()
+
+```
+
+
+
+```{r figure 6 residuals}
+
+residual_pa<-residual_df[,c(1:5,8:10)]
+residual_pa<-merge(residual_pa,threshold_table,by.x=c("TaxaGroup","Model"),by.y=c("taxagroups","model"),all.x=TRUE)
+residual_pa$obs<-ifelse(residual_pa$obs>0,1,0)
+residual_pa$predicted<-ifelse(residual_pa$pred_pa>residual_pa$threshold,1,0)
+
+residual_pa$taxa<-factor(residual_pa$taxa,levels=c("Coral","Primnoidae","Pennatulacean","Sponge","Demospongiae","Hexactinellida"))
+
+residual_pa$Error[residual_pa$predicted==0&residual_pa$obs==0]<-"True negative"
+residual_pa$Error[residual_pa$predicted==1&residual_pa$obs==0]<-"False positive"
+residual_pa$Error[residual_pa$predicted==1&residual_pa$obs==1]<-"True positive"
+residual_pa$Error[residual_pa$predicted==0&residual_pa$obs==1]<-"False negative"
+
+
+
+p1<-ggplot(residual_pa[residual_pa$Model=="ENS",])+
+  geom_point(aes(x=obs,y=pred_pa,color=Error,shape=Error),position=position_jitter(seed=1,width=.45))+
+  geom_violin(aes(x=obs,y=pred_pa,group=obs),bg=NA,linewidth=.75)+geom_hline(data=threshold_table[threshold_table$model=="ENS",],aes(yintercept=threshold),linetype="dashed")+
+  #  scale_color_viridis_d(option="cividis","Error")+
+  scale_color_manual("Error",values=c("#ABA074FF","#00336FFF","#FD9A6AFF","#2D718EFF"))+
+ # theme(legend.position = c(.90, .1),
+  #      legend.justification = c(1,0),panel.background = element_rect(fill = "white"),
+  #      panel.grid = element_line(color = "grey90"),
+  #      legend.key=element_blank(),
+    #    strip.background =element_rect(fill="grey90"))+
+  xlab("Observed presence or absence")+ylab("Probability of presence") +
+  scale_x_continuous(breaks = c(0, 1),
+    labels = c("Absent", "Present")
+  )
+p1<-p1+facet_wrap(~taxa)  
+p1 
+# residstest<-data.frame(residual=test.auc_data$V2-test.auc_data$test_predict_SG)
+# #residstest<-predict(sgamb1,type="link",newdata=test.transdata)
+# 
+# residstest$Stock<-test.transdata$Stock
+# 
+# p1<-ggplot(residstest)+geom_violin(aes(x=Stock,y=residual,color=Stock,fill=Stock))+xlab("Stock")+ylab("Residuals")+theme(legend.position="None")
+
+png("Figure6.png",width=6,height=5,units="in",res=300)
+print(p1)
+dev.off()
+
+```
+
+
+
+```{r figure8 density}
+alldat<-merge(residual_df,val_data[,1:13],by="Deployment_ID",all.x=TRUE)
+alldat$Longitude<-factor(ceiling(alldat$Start_long/10)*10, levels=c(-160,-150,-140,-130))
+
+alldat1<-aggregate(residual_cpue~Survey+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="mean")
+alldat1$SE<-aggregate(residual_cpue~Survey+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="sd")[,3]/sqrt(aggregate(residual_cpue~Survey+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="length")[,3])
+alldat1$Taxa<-factor(alldat1$TaxaGroup,levels=c("corals","primnoidae","seawhips","sponge","demosponge","hexact"),labels=c("Coral","Primnoidae","Pennatulacean","Porifera","Demospongiae","Hexactinellida"))
+alldat1$Survey<-factor(alldat1$Survey,levels=c("HAPC 2010","Kodiak 2012-2014","MACE 2013","MACE 2015","MACE 2017","MACE 2019","GOA 2022"))#,labels=c("Coral","Primnoidae","Pennatulacean","Porifera","Demospongiae","Hexactinellida"))
+
+p1<-ggplot(alldat1)+
+  geom_errorbar(aes(x=Survey,ymin=residual_cpue-SE,ymax=residual_cpue+SE),width=0.15)+
+  geom_point(aes(x=Survey,y=residual_cpue,color=Survey,fill=Survey),stat="identity",size=2.5)+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+xlab("")+ylab("Density residual (observed - predicted")+
+  scale_color_manual("Survey",values=c("#FDE725FF","#8FD744FF","#35B779FF","#21908CFF","#31688EFF","#443A83FF","#440154FF"))+ 
+  facet_wrap(~Taxa)#,scales="free_y")
+
+png("Figure8a.png")
+print(p1)
+dev.off()
+
+aov1<-aov(residual_cpue~Survey+TaxaGroup+Survey*TaxaGroup,data=alldat[alldat$Model=="ENS",])
+summary(aov1)
+TukeyHSD(aov1)
+
+
+
+alldat1<-aggregate(residual_cpue~Longitude+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="mean")
+alldat1$SE<-aggregate(residual_cpue~Longitude+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="sd")[,3]/sqrt(aggregate(residual_cpue~Longitude+TaxaGroup,alldat[alldat$Model=="ENS",],FUN="length")[,3])
+alldat1$Taxa<-factor(alldat1$TaxaGroup,levels=c("corals","primnoidae","seawhips","sponge","demosponge","hexact"),labels=c("Coral","Primnoidae","Pennatulacean","Porifera","Demospongiae","Hexactinellida"))
+#alldat1$Longitude<-factor(alldat1$Survey,levels=c("HAPC 2010","Kodiak 2012-2014","MACE 2013","MACE 2015","MACE 2017","MACE 2019","GOA 2022"))#,labels=c("Coral","Primnoidae","Pennatulacean","Porifera","Demospongiae","Hexactinellida"))
+
+p1<-ggplot(alldat1)+geom_errorbar(aes(x=Longitude,ymin=residual_cpue-SE,ymax=residual_cpue+SE),width=0.25)+
+  geom_point(aes(x=Longitude,y=residual_cpue,color=Longitude,fill=Longitude),stat="identity",size=3)+
+  ylab("Density residual (observed - predicted)")+
+  xlab("Longitude (10 degree bins)")+
+  theme(legend.position="none")+
+ # theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))+xlab("")+
+ # scale_color_manual("Survey",values=c("#FDE725FF","#8FD744FF","#35B779FF","#21908CFF","#31688EFF","#443A83FF","#440154FF"))+ 
+  facet_wrap(~Taxa)#,scales="free_y")
+
+png("Figure8.png")
+print(p1)
+dev.off()
+
+```
+
+
+
+####################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################
+
+
+
+
+
+
+```{r Figure1-alt}
+
+conlevels<-c(100,200,500,998)
+goacontour<-rasterToContour(bathy,levels=conlevels)
+goacontour<-st_as_sf(goacontour)
+goacontour<-st_transform(goacontour,3832)
+
+legVals <- c("100 m","200 m","500 m","1000 m")
+legend("bottom", legend = legVals, lty=c(1,1,1,1),col=colorRampPalette(c("grey30","grey70"))(4),bty="n", pt.cex = 2 , title ="",cex=.65)
+dev.off()
+
+
+bg = ne_countries(scale = "medium",  returnclass = "sf")
+bg1<-st_transform(bg,3832)
+
+#TRANSFORM THE TRAJECTORIES TO THE SAME PROJECTION AND ADD THEM TO THE DATA SET
+data2<-project(cbind(Deployments$Start_long,Deployments$Start_lat),"+proj=merc +lon_0=150 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
+Deployments$LonP<-data2[,1]
+Deployments$LatP<-data2[,2]
+
+#MAKE A SET OF BOUNDARIES TO USE AS THE PLOTTING RANGE (LIMITS ON LONGITUDE AND LATITUDE)
+data3<-data.frame(cbind(c(-130,-170),c(48,62)))
+data3<-proj4::project(data3,"+proj=merc +lon_0=150 +k=1 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs")
+
+#PLOT THE ENTIRE TRAJECTORY WITH THE MAP AS THE BACKGROUND
+p<-ggplot()+
+  #basemap
+  geom_sf(data = bg1)+
+
+  geom_sf(data=goacontour,color=c("grey90","grey70","grey50","grey30"))+
+  geom_point(data = Deployments, 
+             aes(x=LonP,y=LatP,group=Survey,color=Survey),
+             alpha = 0.7, shape=21, size = 2)+
+  geom_text_repel(data=Deployments,aes(x=LonP,y=LatP,label=Survey,color=Survey),size=3)+
+  
+  # formatting
+  scale_fill_viridis_d(option = "inferno")+
+  scale_color_viridis_d(option = "inferno")+
+  scale_size_continuous(range = c(0.1,14))+
+  labs(x=NULL, y=NULL, 
+       fill = 'Survey', 
+       color = 'Survey')+
+  theme_dark()+
+  #theme(panel.grid = element_blank(),legend.position="none")+
+    xlab("")+ylab("")+
+
+annotation_north_arrow(location = "br", width = unit(.5, "cm"),
+                           height = unit(1., "cm"),
+                           style = north_arrow_orienteering(
+                             line_width = 1,
+                             line_col = "black",
+                             fill = c("white", "black"),
+                             text_col = "black",
+                             text_family = "",
+                             text_face = NULL,
+                             text_size = 10,
+                             text_angle = 0)) +
+
+annotation_scale(plot_unit="km")+
+  coord_sf(xlim = range(data3$x, na.rm = TRUE), 
+           ylim = range(data3$y, na.rm = TRUE), 
+           expand = TRUE)
+
+png("Figure1.png",height=6,width=6,unit="in",res=300)
+print(p)
+dev.off()
+
+
+
+```
 
